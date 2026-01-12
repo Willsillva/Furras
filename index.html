@@ -2,40 +2,33 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <!-- trava o zoom (pedido do usuário) e evita que o cenário mude no mobile -->
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Sorteio com Bolinhas (Plinko) — Mobile Fix</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Plinko Furras Sorteio </title>
   <style>
     :root { color-scheme: dark; }
     body{
       margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       background:#0b0f14; color:#e9eef5;
       display:flex; flex-direction:column; min-height:100vh;
-      overscroll-behavior: none;
     }
     header{
       padding:14px 16px; border-bottom:1px solid #1b2633;
       display:flex; align-items:center; gap:14px; flex-wrap:wrap;
     }
-    header .group{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    input[type="number"], textarea{
-      padding:8px 10px; border:1px solid #243447; border-radius:10px;
+    header .group{ display:flex; align-items:center; gap:10px; }
+    input[type="number"]{
+      width:84px; padding:8px 10px; border:1px solid #243447; border-radius:10px;
       background:#0f1620; color:#e9eef5; outline:none;
-      font-family: inherit;
-      font-size:16px; /* evita zoom automático iOS ao focar */
     }
-    input[type="number"]{ width:92px; }
-    label{ color:#cfe0f7; font-size:13px; }
     button{
       padding:9px 12px; border:1px solid #2a3c52; border-radius:12px;
       background:#101a26; color:#e9eef5; cursor:pointer;
-      font-size:16px;
     }
     button:hover{ background:#132033; }
     button:disabled{ opacity:.55; cursor:not-allowed; }
     .hint{ color:#b7c3d4; font-size:13px; }
     main{
-      display:grid; grid-template-columns: 1fr 360px; gap:12px;
+      display:grid; grid-template-columns: 1fr 320px; gap:12px;
       padding:12px; flex:1;
     }
     .panel{
@@ -44,33 +37,25 @@
     }
     #canvasWrap{ position:relative; }
     canvas{ width:100%; height:100%; display:block; background: radial-gradient(1200px 600px at 50% 15%, #0f2034, #070b10); }
-
-    .side{ padding:12px; display:flex; flex-direction:column; gap:12px; }
+    .side{
+      padding:12px;
+      display:flex; flex-direction:column; gap:12px;
+    }
     .card{
       border:1px solid #1b2633; border-radius:14px; background:#0b111a;
       padding:12px;
     }
     h3{ margin:0 0 8px 0; font-size:14px; color:#cfe0f7; }
-    .small{ font-size:12px; color:#b7c3d4; line-height:1.35; }
-    .row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
     ol{ margin:0; padding-left:20px; }
     li{ margin:6px 0; }
     .badge{
       display:inline-block; min-width:22px; padding:2px 8px; border-radius:999px;
       border:1px solid #2a3c52; background:#0f1620; margin-left:8px; font-size:12px; color:#b7c3d4;
     }
-    textarea{
-      width:100%;
-      min-height: 220px;
-      resize: vertical;
-      line-height: 1.35;
-      white-space: pre;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size:16px;
-    }
+    .row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .small{ font-size:12px; color:#b7c3d4; }
     @media (max-width: 980px){
       main{ grid-template-columns: 1fr; }
-      textarea{ min-height: 180px; }
     }
   </style>
 </head>
@@ -78,16 +63,12 @@
   <header>
     <div class="group">
       <strong>Sorteio com Bolinhas</strong>
-      <span class="hint">Defina jogadores (2–20), cole a lista de nomes e a altura da queda.</span>
+      <span class="hint">Defina jogadores (2–20) e inicie o sorteio.</span>
     </div>
 
     <div class="group" style="margin-left:auto;">
       <label for="players">Jogadores:</label>
       <input id="players" type="number" min="2" max="20" value="8" />
-
-      <label for="heightPx">Altura (px):</label>
-      <input id="heightPx" type="number" min="1200" max="8000" value="3600" />
-
       <button id="startBtn">Iniciar</button>
       <button id="resetBtn">Resetar</button>
       <button id="pauseBtn" disabled>Pausar</button>
@@ -102,33 +83,20 @@
     <div class="panel side">
       <div class="card">
         <div class="row">
-          <h3>Lista de nomes (1 por linha)</h3>
-          <span class="small">Ctrl+V</span>
-        </div>
-        <textarea id="namesList" placeholder="Cole aqui (um por linha), por exemplo:
-Ana
-Bruno
-Carla
-Diego"></textarea>
-        <div class="small" style="margin-top:10px;">
-          O jogo usa os <strong>primeiros N nomes</strong>, onde <strong>N</strong> é o número de jogadores.
-          Se faltar nome, completa com “Jogador X”. Se sobrar, ignora o excedente.
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="row">
-          <h3>Ordem de chegada (ranking)</h3>
-          <span class="small">linha de chegada no final</span>
+          <h3>Ranking (ordem de chegada)</h3>
+          <div class="small">Linha de chegada: faixa inferior</div>
         </div>
         <ol id="ranking"></ol>
       </div>
 
       <div class="card">
-        <h3>Observação</h3>
+        <h3>Como funciona</h3>
         <div class="small">
-          O cenário e a física são simulados em tamanho fixo (mundo), e apenas renderizados escalados no mobile.
-          Isso evita que o zoom/resize altere obstáculos e prenda as bolinhas.
+          As bolinhas (uma por jogador) caem com gravidade e batem nos pinos, desviando
+          aleatoriamente. O vencedor é quem cruza a linha de chegada primeiro.
+        </div>
+        <div class="small" style="margin-top:10px;">
+          Dica: você pode ajustar a “aleatoriedade” mudando a constante <code>RANDOM_KICK</code> no script.
         </div>
       </div>
     </div>
@@ -136,148 +104,76 @@ Diego"></textarea>
 
 <script>
 (() => {
-  // =========================
-  // FIX PRINCIPAL (MOBILE):
-  // Física em mundo FIXO (SIM_W), render escalado para qualquer tela.
-  // =========================
-
-  // ======== “MUNDO” FIXO (não muda com mobile/zoom) ========
-  const SIM_W = 900;            // largura fixa da simulação (mundo)
-  const WALL_PADDING = 14;
-
-  // ======== CONFIGURAÇÕES FÍSICAS ========
-  const GRAVITY = 1500;         // px/s^2 (em unidades do mundo)
-  const AIR_DRAG = 0.995;
-  const BOUNCE = 0.78;
-
+  // ======== CONFIGURAÇÕES ========
+  const GRAVITY = 1400;          // px/s^2
+  const AIR_DRAG = 0.995;        // arrasto (0..1)
+  const BOUNCE = 0.78;           // restituição nas colisões
+  const RANDOM_KICK = 120;       // "chute" lateral aleatório em colisões (px/s)
   const PEG_RADIUS = 6;
   const BALL_RADIUS = 14;
-
-  const FINISH_BAND = 64;
-
-  // aleatoriedade
-  const RANDOM_KICK = 180;      // impulso em colisão com pino
-  const SIDE_NOISE = 40;        // ruído lateral contínuo (px/s^2) -> mais “random”
-  const UNSTUCK_TIME = 0.22;    // segundos quase parado para destravar
-  const UNSTUCK_SPEED = 55;     // px/s
-  const UNSTUCK_PUSH_X = 520;   // px/s
-  const UNSTUCK_PUSH_UP = 240;  // px/s (puxa um pouco para cima)
-
-  // estabilidade (FPS variável no mobile)
-  const FIXED_DT = 1/120;       // passo fixo (120Hz)
-  const MAX_ACCUM = 0.12;       // limita dt acumulado
-  const MAX_STEPS = 10;         // evita espiral
+  const FINISH_BAND = 48;        // altura da faixa de chegada
+  const WALL_PADDING = 14;
 
   // ======== DOM ========
   const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d', { alpha: true });
-
+  const ctx = canvas.getContext('2d');
   const playersInput = document.getElementById('players');
-  const heightInput = document.getElementById('heightPx');
-  const namesListEl = document.getElementById('namesList');
-
   const startBtn = document.getElementById('startBtn');
   const resetBtn = document.getElementById('resetBtn');
   const pauseBtn = document.getElementById('pauseBtn');
   const rankingEl = document.getElementById('ranking');
 
   // ======== ESTADO ========
-  let DPR = 1;
-  let CSS_W = 900;                 // tamanho visual do canvas (css pixels)
-  let CSS_H = 560;
-
-  let SCALE = 1;                   // escala (screen = world*SCALE)
-  let VIEW_H_WORLD = 560;          // altura visível em unidades do mundo
-
-  let WORLD_H = 3600;
-
+  let W = 900, H = 560, DPR = 1;
   let pegs = [];
   let balls = [];
-
   let running = false;
   let paused = false;
-
-  let finishOrder = [];
-  let animationId = null;
-
-  let cameraY = 0;
-  let cameraTargetY = 0;
-
   let lastT = 0;
   let startTime = 0;
-
-  // integrador estável
-  let accumulator = 0;
+  let finishOrder = []; // [{id, t}]
+  let animationId = null;
 
   // ======== HELPERS ========
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rand = (a, b) => a + Math.random() * (b - a);
   const now = () => performance.now();
 
+  function setCanvasSize() {
+    const wrap = document.getElementById('canvasWrap');
+    const rect = wrap.getBoundingClientRect();
+    DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    W = Math.floor(rect.width);
+    H = Math.floor(Math.max(420, rect.height)); // garante um mínimo
+
+    canvas.width  = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    buildBoard();
+    draw();
+  }
+
   function distinctColor(i, n){
     const h = (i * (360 / n)) % 360;
     return `hsl(${h} 80% 60%)`;
   }
 
-  function parseNames() {
-    return (namesListEl.value || "")
-      .split(/\r?\n/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-  }
-
-  // ======== CANVAS/ESCALA (render apenas) ========
-  function fitPanelHeight(){
-    const wrap = document.getElementById("canvasWrap");
-    const headerH = document.querySelector("header").getBoundingClientRect().height;
-    const target = Math.max(420, window.innerHeight - headerH - 24);
-    wrap.style.height = target + "px";
-  }
-
-  function setCanvasSizeOnly() {
-    const wrap = document.getElementById('canvasWrap');
-    const rect = wrap.getBoundingClientRect();
-
-    DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-    CSS_W = Math.floor(rect.width);
-    CSS_H = Math.floor(Math.max(420, rect.height));
-
-    canvas.width  = CSS_W * DPR;
-    canvas.height = CSS_H * DPR;
-    canvas.style.width = CSS_W + "px";
-    canvas.style.height = CSS_H + "px";
-
-    // escala de render: mundo (SIM_W) sempre igual; tela muda.
-    SCALE = CSS_W / SIM_W;
-    VIEW_H_WORLD = CSS_H / SCALE;
-
-    // camera precisa respeitar novas dimensões visíveis, sem re-gerar o cenário
-    cameraY = clamp(cameraY, 0, Math.max(0, WORLD_H - VIEW_H_WORLD));
-    cameraTargetY = cameraY;
-
-    draw();
-  }
-
-  // ======== TABULEIRO FIXO (em mundo) ========
   function buildBoard() {
     pegs = [];
 
-    const topMargin = 90;
-    const bottomMargin = FINISH_BAND + 120;
-    const usableH = WORLD_H - topMargin - bottomMargin;
+    const topMargin = 70;
+    const bottomMargin = FINISH_BAND + 40;
+    const usableH = H - topMargin - bottomMargin;
 
-    // Definição FIXA de colunas para evitar apertar no mobile
-    const cols = 12; // fixo para manter espaçamento saudável
-    const colGap = (SIM_W - 2 * WALL_PADDING) / cols;
+    // Distribuição de pinos (estilo Plinko)
+    const rows = Math.floor(clamp(usableH / 46, 7, 12));
+    const cols = Math.floor(clamp(W / 70, 8, 16));
 
-    // Linhas proporcional ao mundo (mas com gap mínimo seguro)
-    const rowGapTarget = 54; // aumenta segurança contra “encaixe”
-    const rows = Math.floor(clamp(usableH / rowGapTarget, 18, 120));
     const rowGap = usableH / rows;
-
-    // Segurança geométrica (anti-trava): garante folga
-    // (com cols fixo + ball pequena, já é bem seguro)
-    // Se quiser ainda mais folga, aumente rowGapTarget ou reduza cols.
+    const colGap = (W - 2 * WALL_PADDING) / cols;
 
     for (let r = 0; r < rows; r++) {
       const y = topMargin + r * rowGap + 20;
@@ -285,7 +181,10 @@ Diego"></textarea>
 
       for (let c = 0; c <= cols; c++) {
         const x = WALL_PADDING + c * colGap + offset;
-        if (x < WALL_PADDING + 18 || x > SIM_W - WALL_PADDING - 18) continue;
+
+        // evita pinos muito colados na parede
+        if (x < WALL_PADDING + 18 || x > W - WALL_PADDING - 18) continue;
+
         pegs.push({ x, y, r: PEG_RADIUS });
       }
     }
@@ -296,69 +195,41 @@ Diego"></textarea>
     finishOrder = [];
     rankingEl.innerHTML = "";
 
-    cameraY = 0;
-    cameraTargetY = 0;
-
-    const names = parseNames();
-    const topY = 50;
-    const gap = (SIM_W - 2 * WALL_PADDING) / (n + 1);
+    // cria bolas distribuídas no topo
+    const topY = 40;
+    const gap = (W - 2 * WALL_PADDING) / (n + 1);
 
     for (let i = 0; i < n; i++) {
-      const id = i + 1;
       const x = WALL_PADDING + (i + 1) * gap;
-      const name = (names[i] || `Jogador ${id}`).trim() || `Jogador ${id}`;
 
       balls.push({
-        id,
-        name,
+        id: i + 1,
         x, y: topY,
-        vx: rand(-70, 70),
+        vx: rand(-60, 60),
         vy: rand(-20, 20),
         r: BALL_RADIUS,
         color: distinctColor(i, n),
         finished: false,
-        finishT: null,
-
-        // anti-stuck
-        lastX: x,
-        lastY: topY,
-        stuck: 0
+        finishT: null
       });
     }
-  }
-
-  function setControlsEnabled(enabled) {
-    playersInput.disabled = !enabled;
-    heightInput.disabled = !enabled;
-    namesListEl.disabled = !enabled;
   }
 
   function resetAll() {
     running = false;
     paused = false;
-
+    lastT = 0;
+    startTime = 0;
     if (animationId) cancelAnimationFrame(animationId);
     animationId = null;
 
-    accumulator = 0;
-
     const n = clamp(parseInt(playersInput.value || "8", 10), 2, 20);
     playersInput.value = n;
-
-    WORLD_H = clamp(parseInt(heightInput.value || "3600", 10), 1200, 8000);
-    heightInput.value = WORLD_H;
-
-    buildBoard();
     createBalls(n);
 
     startBtn.disabled = false;
     pauseBtn.disabled = true;
     pauseBtn.textContent = "Pausar";
-    setControlsEnabled(true);
-
-    cameraY = 0;
-    cameraTargetY = 0;
-
     draw();
   }
 
@@ -366,23 +237,15 @@ Diego"></textarea>
     const n = clamp(parseInt(playersInput.value || "8", 10), 2, 20);
     playersInput.value = n;
 
-    WORLD_H = clamp(parseInt(heightInput.value || "3600", 10), 1200, 8000);
-    heightInput.value = WORLD_H;
-
-    buildBoard();
     createBalls(n);
-
     running = true;
     paused = false;
-
-    accumulator = 0;
     lastT = now();
     startTime = lastT;
 
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     pauseBtn.textContent = "Pausar";
-    setControlsEnabled(false);
 
     loop();
   }
@@ -397,30 +260,32 @@ Diego"></textarea>
     }
   }
 
-  // ======== COLISÕES/FÍSICA ========
+  // ======== FÍSICA ========
   function collideBallWithPeg(b, p) {
     const dx = b.x - p.x;
     const dy = b.y - p.y;
     const dist = Math.hypot(dx, dy);
     const minDist = b.r + p.r;
+
     if (dist >= minDist || dist === 0) return;
 
+    // normal
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // separa
+    // empurra para fora
     const overlap = (minDist - dist);
     b.x += nx * overlap;
     b.y += ny * overlap;
 
-    // reflete velocidade
+    // reflete velocidade na normal
     const vn = b.vx * nx + b.vy * ny;
     if (vn < 0) {
       b.vx -= (1 + BOUNCE) * vn * nx;
       b.vy -= (1 + BOUNCE) * vn * ny;
     }
 
-    // aleatoriedade no impacto
+    // pequeno "chute" aleatório para dar imprevisibilidade
     b.vx += rand(-RANDOM_KICK, RANDOM_KICK) * 0.12;
   }
 
@@ -431,6 +296,7 @@ Diego"></textarea>
     const minDist = a.r + b.r;
     if (dist >= minDist || dist === 0) return;
 
+    // separa
     const nx = dx / dist;
     const ny = dy / dist;
     const overlap = minDist - dist;
@@ -440,6 +306,7 @@ Diego"></textarea>
     b.x += nx * overlap * 0.5;
     b.y += ny * overlap * 0.5;
 
+    // colisão elástica simplificada (mesma massa)
     const dvx = b.vx - a.vx;
     const dvy = b.vy - a.vy;
     const vn = dvx * nx + dvy * ny;
@@ -452,80 +319,49 @@ Diego"></textarea>
     b.vy += impulse * ny;
   }
 
-  function physicsStep(dt) {
-    const finishLineY = WORLD_H - FINISH_BAND;
-    const bottom = WORLD_H - 6;
+  function step(dt) {
+    // dt em segundos
+    const floorY = H - FINISH_BAND - 6;
 
     for (const b of balls) {
       if (b.finished) continue;
 
-      // gravidade + ruído (mais “random”)
+      // gravidade
       b.vy += GRAVITY * dt;
-      b.vx += (rand(-SIDE_NOISE, SIDE_NOISE)) * dt;
 
       // integra
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
       // arrasto
-      const drag = Math.pow(AIR_DRAG, dt * 60);
-      b.vx *= drag;
-      b.vy *= drag;
+      b.vx *= Math.pow(AIR_DRAG, dt * 60);
+      b.vy *= Math.pow(AIR_DRAG, dt * 60);
 
       // paredes
       const left = WALL_PADDING + b.r;
-      const right = SIM_W - WALL_PADDING - b.r;
-      if (b.x < left)  { b.x = left;  b.vx = Math.abs(b.vx) * BOUNCE; }
-      if (b.x > right) { b.x = right; b.vx = -Math.abs(b.vx) * BOUNCE; }
+      const right = W - WALL_PADDING - b.r;
 
-      // teto
+      if (b.x < left) { b.x = left; b.vx = Math.abs(b.vx) * BOUNCE; }
+      if (b.x > right){ b.x = right; b.vx = -Math.abs(b.vx) * BOUNCE; }
+
+      // teto (só para não ficar preso)
       const top = 12 + b.r;
       if (b.y < top) { b.y = top; b.vy = Math.abs(b.vy) * BOUNCE; }
 
-      // pinos
-      for (const p of pegs) collideBallWithPeg(b, p);
-
-      // chegada
-      if (b.y >= finishLineY - b.r - 2) {
-        b.finished = true;
-        b.finishT = (now() - startTime) / 1000;
-
-        b.x = clamp(b.x, WALL_PADDING + b.r, SIM_W - WALL_PADDING - b.r);
-        b.y = finishLineY + FINISH_BAND * 0.5;
-        b.vx = 0; b.vy = 0;
-
-        finishOrder.push({ id: b.id, name: b.name, t: b.finishT });
-        updateRanking();
-        continue;
-      }
-
-      // chão final
-      if (b.y > bottom - b.r) {
-        b.y = bottom - b.r;
-        b.vy = -Math.abs(b.vy) * 0.35;
+      // chão de física (antes da faixa de chegada)
+      if (b.y > floorY - b.r) {
+        b.y = floorY - b.r;
+        b.vy = -Math.abs(b.vy) * 0.35; // amortecimento forte no chão
         b.vx *= 0.92;
       }
 
-      // anti-stuck (se quase não move + baixa velocidade, empurra aleatoriamente)
-      const speed = Math.hypot(b.vx, b.vy);
-      const moved = Math.hypot(b.x - b.lastX, b.y - b.lastY);
+      // colisão com pinos
+      for (const p of pegs) collideBallWithPeg(b, p);
 
-      if (speed < UNSTUCK_SPEED && moved < 0.35) {
-        b.stuck += dt;
-        if (b.stuck > UNSTUCK_TIME) {
-          b.vx += rand(-UNSTUCK_PUSH_X, UNSTUCK_PUSH_X);
-          b.vy -= rand(0, UNSTUCK_PUSH_UP);
-          b.stuck = 0;
-        }
-      } else {
-        b.stuck = 0;
-      }
-
-      b.lastX = b.x;
-      b.lastY = b.y;
+      // colisão entre bolas (até 20, OK)
+      // (feito em segundo loop para reduzir viés)
     }
 
-    // colisão entre bolas
     for (let i = 0; i < balls.length; i++){
       for (let j = i + 1; j < balls.length; j++){
         if (balls[i].finished || balls[j].finished) continue;
@@ -533,35 +369,40 @@ Diego"></textarea>
       }
     }
 
-    // câmera acompanha as mais “adiantadas”
-    const active = balls.filter(b => !b.finished);
-    const yFocus = active.length ? Math.max(...active.map(b => b.y)) : (WORLD_H - FINISH_BAND);
-    const desired = clamp(yFocus - VIEW_H_WORLD * 0.35, 0, Math.max(0, WORLD_H - VIEW_H_WORLD));
-    cameraTargetY = desired;
-    cameraY += (cameraTargetY - cameraY) * 0.12;
+    // verifica chegadas
+    const finishLineY = H - FINISH_BAND;
+    for (const b of balls) {
+      if (b.finished) continue;
+      if (b.y >= finishLineY - b.r - 2) {
+        b.finished = true;
+        b.finishT = (now() - startTime) / 1000;
+        finishOrder.push({ id: b.id, t: b.finishT });
+        updateRanking();
+      }
+    }
 
-    // finaliza
+    // se todos terminaram, para
     if (finishOrder.length === balls.length) {
       running = false;
       pauseBtn.disabled = true;
       startBtn.disabled = false;
-      setControlsEnabled(true);
     }
   }
 
   // ======== RENDER ========
-  function drawBoardWorld() {
-    const finishY = WORLD_H - FINISH_BAND;
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
 
+    // faixa de chegada
     ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.07)";
-    ctx.fillRect(0, finishY, SIM_W, FINISH_BAND);
-
-    ctx.fillStyle = "rgba(255,255,255,0.40)";
-    ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-    ctx.fillText("LINHA DE CHEGADA", 14, finishY + 20);
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fillRect(0, H - FINISH_BAND, W, FINISH_BAND);
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillText("LINHA DE CHEGADA", 14, H - FINISH_BAND + 20);
     ctx.restore();
 
+    // pinos
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     for (const p of pegs) {
@@ -571,23 +412,21 @@ Diego"></textarea>
     }
     ctx.restore();
 
+    // paredes (só visual)
     ctx.save();
     ctx.strokeStyle = "rgba(255,255,255,0.15)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(WALL_PADDING, 0);
-    ctx.lineTo(WALL_PADDING, WORLD_H);
-    ctx.moveTo(SIM_W - WALL_PADDING, 0);
-    ctx.lineTo(SIM_W - WALL_PADDING, WORLD_H);
+    ctx.lineTo(WALL_PADDING, H);
+    ctx.moveTo(W - WALL_PADDING, 0);
+    ctx.lineTo(W - WALL_PADDING, H);
     ctx.stroke();
     ctx.restore();
-  }
 
-  function drawBallsWorld() {
+    // bolas
     for (const b of balls) {
       ctx.save();
-
-      // bola
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       ctx.fillStyle = b.color;
@@ -601,78 +440,39 @@ Diego"></textarea>
 
       // número
       ctx.fillStyle = "rgba(0,0,0,0.75)";
-      ctx.font = "800 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+      ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(b.id), b.x, b.y);
-
-      // nome acima
-      const name = b.name || `Jogador ${b.id}`;
-      ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "alphabetic";
-
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "rgba(0,0,0,0.75)";
-      ctx.strokeText(name, b.x, b.y - b.r - 10);
-
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      ctx.fillText(name, b.x, b.y - b.r - 10);
-
       ctx.restore();
     }
-  }
 
-  function drawHUD() {
-    // HUD em pixels de tela (não escalado pelo mundo)
+    // status
     ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
     const status = running ? (paused ? "PAUSADO" : "RODANDO") : "PRONTO";
-
-    const maxCam = Math.max(0, WORLD_H - VIEW_H_WORLD);
-    const pct = maxCam === 0 ? 100 : (cameraY / maxCam * 100);
     ctx.fillText(`Status: ${status}`, 14, 18);
-    ctx.fillText(`Mundo fixo: ${SIM_W}px | Queda: ${WORLD_H}px | Câmera: ${pct.toFixed(0)}%`, 14, 36);
     ctx.restore();
-  }
-
-  function draw() {
-    // limpa em pixels reais do canvas
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // desenha mundo escalado (mundo -> tela)
-    ctx.setTransform(DPR * SCALE, 0, 0, DPR * SCALE, 0, 0);
-
-    ctx.save();
-    ctx.translate(0, -cameraY);
-    drawBoardWorld();
-    drawBallsWorld();
-    ctx.restore();
-
-    // HUD (em pixels)
-    ctx.setTransform(DPR,0,0,DPR,0,0);
-    drawHUD();
   }
 
   function updateRanking() {
+    // ordena por tempo (menor = primeiro)
     const sorted = [...finishOrder].sort((a,b) => a.t - b.t);
+
     rankingEl.innerHTML = "";
     for (const item of sorted) {
       const li = document.createElement("li");
-      li.textContent = item.name;
-
+      li.textContent = `Jogador ${item.id}`;
       const badge = document.createElement("span");
       badge.className = "badge";
       badge.textContent = `${item.t.toFixed(2)}s`;
       li.appendChild(badge);
-
       rankingEl.appendChild(li);
     }
   }
 
-  // ======== LOOP (timestep fixo) ========
+  // ======== LOOP ========
   function loop() {
     if (!running || paused) { draw(); return; }
 
@@ -680,17 +480,12 @@ Diego"></textarea>
     let dt = (t - lastT) / 1000;
     lastT = t;
 
-    dt = clamp(dt, 0, MAX_ACCUM);
-    accumulator += dt;
+    // evita "pulos" grandes (ex: aba em segundo plano)
+    dt = clamp(dt, 0, 0.022);
 
-    let steps = 0;
-    while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
-      physicsStep(FIXED_DT);
-      accumulator -= FIXED_DT;
-      steps++;
-    }
-
+    step(dt);
     draw();
+
     animationId = requestAnimationFrame(loop);
   }
 
@@ -704,27 +499,22 @@ Diego"></textarea>
     if (!running) resetAll();
   });
 
-  heightInput.addEventListener("change", () => {
-    heightInput.value = clamp(parseInt(heightInput.value || "3600", 10), 1200, 8000);
-    if (!running) resetAll();
-  });
-
-  // IMPORTANTE: resize/zoom só recalcula escala do render (não refaz tabuleiro)
-  window.addEventListener("resize", () => {
-    fitPanelHeight();
-    setCanvasSizeOnly();
-  });
+  window.addEventListener("resize", () => setCanvasSize());
 
   // ======== INIT ========
-  function init() {
-    fitPanelHeight();
-    setCanvasSizeOnly();
-    resetAll();
+  // ajusta altura do painel conforme viewport
+  function fitPanelHeight(){
+    const wrap = document.getElementById("canvasWrap");
+    // altura aproximada considerando header
+    const headerH = document.querySelector("header").getBoundingClientRect().height;
+    const target = Math.max(420, window.innerHeight - headerH - 24);
+    wrap.style.height = target + "px";
   }
-  init();
+
+  fitPanelHeight();
+  setCanvasSize();
+  resetAll();
 })();
 </script>
 </body>
 </html>
-
-
