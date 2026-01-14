@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
+  <!-- Mantém o layout estável no mobile (sem zoom alterar o mundo/obstáculos) -->
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Bomb Plink Furras - Sorteio</title>
+  <title>Plinko Furras</title>
   <style>
     :root { color-scheme: dark; }
     body{
@@ -17,11 +18,11 @@
       display:flex; align-items:center; gap:14px; flex-wrap:wrap;
     }
     header .group{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    input[type="number"], textarea, input[type="range"]{
+    input[type="number"], textarea{
       padding:8px 10px; border:1px solid #243447; border-radius:10px;
       background:#0f1620; color:#e9eef5; outline:none;
       font-family: inherit;
-      font-size:16px;
+      font-size:16px; /* evita zoom automático no iOS */
     }
     input[type="number"]{ width:92px; }
     label{ color:#cfe0f7; font-size:13px; }
@@ -42,8 +43,10 @@
       overflow:hidden;
     }
     #canvasWrap{ position:relative; }
-    canvas{ width:100%; height:100%; display:block; background: radial-gradient(1200px 600px at 50% 15%, #0f2034, #070b10); }
-
+    canvas{
+      width:100%; height:100%; display:block;
+      background: radial-gradient(1200px 600px at 50% 15%, #0f2034, #070b10);
+    }
     .side{ padding:12px; display:flex; flex-direction:column; gap:12px; }
     .card{
       border:1px solid #1b2633; border-radius:14px; background:#0b111a;
@@ -67,27 +70,6 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size:16px;
     }
-    .sliderRow{
-      display:grid;
-      grid-template-columns: 1fr auto;
-      gap:10px;
-      align-items:center;
-    }
-    input[type="range"]{
-      width:100%;
-      padding:6px 10px;
-    }
-    .pill{
-      border:1px solid #2a3c52;
-      background:#0f1620;
-      border-radius:999px;
-      padding:4px 10px;
-      font-size:12px;
-      color:#cfe0f7;
-      min-width:70px;
-      text-align:center;
-      user-select:none;
-    }
     @media (max-width: 980px){
       main{ grid-template-columns: 1fr; }
       textarea{ min-height: 180px; }
@@ -98,7 +80,7 @@
   <header>
     <div class="group">
       <strong>Sorteio com Bolinhas</strong>
-      <span class="hint">Defina jogadores (2–20), cole nomes, altura e % de bombas.</span>
+      <span class="hint">Rampas laterais (&lt; e &gt;) + pás giratórias no início. Cole nomes e inicie.</span>
     </div>
 
     <div class="group" style="margin-left:auto;">
@@ -138,27 +120,18 @@ Diego"></textarea>
 
       <div class="card">
         <div class="row">
-          <h3>Bombas (💣)</h3>
-          <span class="small">até 20%</span>
+          <h3>Ordem de chegada (ranking)</h3>
+          <span class="small">linha de chegada no final</span>
         </div>
-
-        <div class="sliderRow">
-          <input id="bombRate" type="range" min="0" max="20" step="1" value="10" />
-          <div class="pill" id="bombRateLabel">10%</div>
-        </div>
-
-        <div class="small" style="margin-top:10px;">
-          Ajuste a porcentagem e clique em <strong>Resetar</strong> (ou <strong>Iniciar</strong>) para gerar um novo tabuleiro.
-          Durante o sorteio, o slider fica travado para não mudar o tabuleiro no meio.
-        </div>
+        <ol id="ranking"></ol>
       </div>
 
       <div class="card">
-        <div class="row">
-          <h3>Ranking</h3>
-          <span class="small">chegada e desclassificados</span>
+        <h3>Notas</h3>
+        <div class="small">
+          As laterais agora são rampas triangulares (como &lt; e &gt;), com colisão por segmento, para impedir fuga pelas bordas.
+          As pás no início giram por impacto das bolas (sem motor).
         </div>
-        <ol id="ranking"></ol>
       </div>
     </div>
   </main>
@@ -166,23 +139,27 @@ Diego"></textarea>
 <script>
 (() => {
   // =========================
-  // Mundo fixo (evita bugs no mobile/zoom)
+  // MUNDO FIXO (não depende do tamanho da tela)
   // =========================
   const SIM_W = 900;
-  const WALL_PADDING = 14;
+
+  // Rampas laterais em formato "<" e ">"
+  const WALL_PAD = 14;
+  const RAMP_INSET_MIN = 90;
+  const RAMP_INSET_MAX = 170;
 
   // ======== FÍSICA ========
-  const GRAVITY = 1500;
+  const GRAVITY = 1500;      // px/s^2
   const AIR_DRAG = 0.995;
-  const BOUNCE = 0.78;
+  const BOUNCE = 0.80;
 
   const PEG_RADIUS = 6;
   const BALL_RADIUS = 14;
   const FINISH_BAND = 64;
 
-  // Randomicidade
-  const RANDOM_KICK = 180;
-  const SIDE_NOISE = 40;
+  // Mais aleatório sem instabilidade
+  const RANDOM_KICK = 160;
+  const SIDE_NOISE = 35;
 
   // Anti-stuck
   const UNSTUCK_TIME = 0.22;
@@ -193,15 +170,19 @@ Diego"></textarea>
   // Estabilidade
   const FIXED_DT = 1/120;
   const MAX_ACCUM = 0.12;
-  const MAX_STEPS = 10;
+  const MAX_STEPS = 12;
 
-  // Limites de velocidade (evita “túnel” nas paredes)
+  // Limites de velocidade (reduz “túnel” e glitches)
   const MAX_VX = 2200;
   const MAX_VY = 4200;
 
-  // Bombas
-  const BOMB_RADIUS = 10;
-  let bombRate = 0.10; // (0..0.20) controlado pelo slider
+  // ======== PÁS GIRATÓRIAS ========
+  // Pás como barras giratórias com pivô e dinâmica simples (rodam por impacto).
+  const PADDLE_LEN = 150;
+  const PADDLE_THICK = 14;      // espessura visual e colisão (capsule)
+  const PADDLE_REST = 0.65;
+  const PADDLE_DAMP = 1.2;      // amortecimento angular (quanto maior, mais para rápido)
+  const PADDLE_MAX_OMEGA = 16;  // limite de velocidade angular
 
   // ======== DOM ========
   const canvas = document.getElementById('c');
@@ -211,9 +192,6 @@ Diego"></textarea>
   const heightInput = document.getElementById('heightPx');
   const namesListEl = document.getElementById('namesList');
 
-  const bombRateEl = document.getElementById('bombRate');
-  const bombRateLabel = document.getElementById('bombRateLabel');
-
   const startBtn = document.getElementById('startBtn');
   const resetBtn = document.getElementById('resetBtn');
   const pauseBtn = document.getElementById('pauseBtn');
@@ -222,19 +200,20 @@ Diego"></textarea>
   // ======== ESTADO ========
   let DPR = 1;
   let CSS_W = 900, CSS_H = 560;
-  let SCALE = 1;
-  let VIEW_H_WORLD = 560;
+  let SCALE = 1;           // mundo -> tela
+  let VIEW_H_WORLD = 560;  // altura visível no mundo
 
   let WORLD_H = 3600;
 
-  let obstacles = []; // {x,y,r,type:'peg'|'bomb'}
+  let pegs = [];
   let balls = [];
+  let paddles = [];
 
   let running = false;
   let paused = false;
-
-  let finishOrder = []; // {id,name,t,status:'chegou'|'desclassificado'}
   let animationId = null;
+
+  let finishOrder = []; // {id,name,t}
 
   let cameraY = 0;
   let cameraTargetY = 0;
@@ -243,9 +222,13 @@ Diego"></textarea>
   let startTime = 0;
   let accumulator = 0;
 
+  // rampas (segmentos)
+  let rampInset = 120;
+  let leftSeg1, leftSeg2, rightSeg1, rightSeg2;
+
   // ======== HELPERS ========
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+  const rand = (a,b) => a + Math.random() * (b - a);
   const now = () => performance.now();
 
   function distinctColor(i, n){
@@ -260,7 +243,7 @@ Diego"></textarea>
       .filter(s => s.length > 0);
   }
 
-  // ======== CANVAS / SCALE ========
+  // ======== CANVAS/ESCALA ========
   function fitPanelHeight(){
     const wrap = document.getElementById("canvasWrap");
     const headerH = document.querySelector("header").getBoundingClientRect().height;
@@ -290,19 +273,90 @@ Diego"></textarea>
     draw();
   }
 
-  // ======== TABULEIRO ========
-  function buildBoard() {
-    obstacles = [];
+  // ======== GEOMETRIA / COLISÃO ========
+  function closestPointOnSegment(px, py, ax, ay, bx, by) {
+    const abx = bx - ax, aby = by - ay;
+    const apx = px - ax, apy = py - ay;
+    const ab2 = abx*abx + aby*aby;
+    let t = ab2 === 0 ? 0 : (apx*abx + apy*aby) / ab2;
+    t = clamp(t, 0, 1);
+    return { x: ax + abx*t, y: ay + aby*t, t };
+  }
 
-    const topMargin = 90;
+  function resolveCircleSegment(ball, ax, ay, bx, by, restitution, extraKick=0) {
+    const cp = closestPointOnSegment(ball.x, ball.y, ax, ay, bx, by);
+    let dx = ball.x - cp.x;
+    let dy = ball.y - cp.y;
+    let dist = Math.hypot(dx, dy);
+
+    const r = ball.r;
+    if (dist >= r || dist === 0) {
+      if (dist === 0) {
+        // normal arbitrária (evita NaN)
+        dx = 0; dy = -1; dist = 1;
+      } else {
+        return false;
+      }
+    }
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    // empurra para fora
+    const overlap = r - dist;
+    ball.x += nx * overlap;
+    ball.y += ny * overlap;
+
+    // reflete velocidade na normal
+    const vn = ball.vx * nx + ball.vy * ny;
+    if (vn < 0) {
+      ball.vx -= (1 + restitution) * vn * nx;
+      ball.vy -= (1 + restitution) * vn * ny;
+      if (extraKick) ball.vx += rand(-extraKick, extraKick) * 0.12;
+    }
+    return true;
+  }
+
+  // Rampas "<" e ">"
+  function rebuildRamps() {
+    rampInset = clamp(Math.round(SIM_W * 0.16), RAMP_INSET_MIN, RAMP_INSET_MAX);
+
+    const midY = WORLD_H * 0.5;
+
+    // esquerda: (PAD,0) -> (PAD+inset,mid) -> (PAD, WORLD_H)
+    leftSeg1  = { ax: WALL_PAD, ay: 0,        bx: WALL_PAD + rampInset, by: midY };
+    leftSeg2  = { ax: WALL_PAD + rampInset, ay: midY, bx: WALL_PAD,     by: WORLD_H };
+
+    // direita: (W-PAD,0) -> (W-PAD-inset,mid) -> (W-PAD,WORLD_H)
+    rightSeg1 = { ax: SIM_W - WALL_PAD, ay: 0,        bx: SIM_W - WALL_PAD - rampInset, by: midY };
+    rightSeg2 = { ax: SIM_W - WALL_PAD - rampInset, ay: midY, bx: SIM_W - WALL_PAD,     by: WORLD_H };
+  }
+
+  function resolveSideRamps(ball) {
+    // colisão com os 4 segmentos
+    resolveCircleSegment(ball, leftSeg1.ax, leftSeg1.ay, leftSeg1.bx, leftSeg1.by, BOUNCE, 0);
+    resolveCircleSegment(ball, leftSeg2.ax, leftSeg2.ay, leftSeg2.bx, leftSeg2.by, BOUNCE, 0);
+    resolveCircleSegment(ball, rightSeg1.ax, rightSeg1.ay, rightSeg1.bx, rightSeg1.by, BOUNCE, 0);
+    resolveCircleSegment(ball, rightSeg2.ax, rightSeg2.ay, rightSeg2.bx, rightSeg2.by, BOUNCE, 0);
+
+    // fail-safe: nunca permite “sair do mundo” mesmo com números extremos
+    ball.x = clamp(ball.x, -50, SIM_W + 50);
+  }
+
+  // ======== TABULEIRO (pinos) ========
+  function buildBoard() {
+    pegs = [];
+
+    const topMargin = 120;
     const bottomMargin = FINISH_BAND + 120;
     const usableH = WORLD_H - topMargin - bottomMargin;
 
+    // Mantém espaçamento confortável para evitar travar
     const cols = 12;
-    const colGap = (SIM_W - 2 * WALL_PADDING) / cols;
+    const colGap = (SIM_W - 2 * (WALL_PAD + 6)) / cols;
 
     const rowGapTarget = 54;
-    const rows = Math.floor(clamp(usableH / rowGapTarget, 18, 120));
+    const rows = Math.floor(clamp(usableH / rowGapTarget, 18, 130));
     const rowGap = usableH / rows;
 
     for (let r = 0; r < rows; r++) {
@@ -310,19 +364,128 @@ Diego"></textarea>
       const offset = (r % 2) * (colGap / 2);
 
       for (let c = 0; c <= cols; c++) {
-        const x = WALL_PADDING + c * colGap + offset;
-        if (x < WALL_PADDING + 18 || x > SIM_W - WALL_PADDING - 18) continue;
+        const x = (WALL_PAD + 6) + c * colGap + offset;
 
-        const isBomb = (Math.random() < bombRate);
-        obstacles.push({
-          x, y,
-          type: isBomb ? 'bomb' : 'peg',
-          r: isBomb ? BOMB_RADIUS : PEG_RADIUS
-        });
+        // evita pinos muito perto das rampas (reduz chance de “encaixe”)
+        const leftLimit  = WALL_PAD + 14;
+        const rightLimit = SIM_W - WALL_PAD - 14;
+        if (x < leftLimit || x > rightLimit) continue;
+
+        pegs.push({ x, y, r: PEG_RADIUS });
       }
     }
   }
 
+  // ======== PÁS ========
+  function buildPaddles() {
+    // Pás próximas ao começo (topo)
+    const baseY = 150;
+    paddles = [
+      makePaddle(SIM_W * 0.28, baseY,           0.15),
+      makePaddle(SIM_W * 0.50, baseY + 40,     -0.10),
+      makePaddle(SIM_W * 0.72, baseY,           0.10),
+    ];
+  }
+
+  function makePaddle(x, y, angle) {
+    const L = PADDLE_LEN;
+    const I = (L*L) / 12; // inércia aproximada (massa=1) para barra com pivô no centro
+    return {
+      x, y,
+      len: L,
+      thick: PADDLE_THICK,
+      angle,
+      omega: 0,
+      inertia: I
+    };
+  }
+
+  function paddleEndpoints(p) {
+    const hx = Math.cos(p.angle) * (p.len / 2);
+    const hy = Math.sin(p.angle) * (p.len / 2);
+    return {
+      ax: p.x - hx, ay: p.y - hy,
+      bx: p.x + hx, by: p.y + hy
+    };
+  }
+
+  function paddleSurfaceVelocity(p, cx, cy) {
+    // velocidade tangencial no ponto de contato por rotação em torno do pivô:
+    // v = omega x r  => ( -omega*ry, omega*rx )
+    const rx = cx - p.x;
+    const ry = cy - p.y;
+    return { vx: -p.omega * ry, vy: p.omega * rx };
+  }
+
+  function collideBallWithPaddle(ball, p, dt) {
+    const ep = paddleEndpoints(p);
+    const cp = closestPointOnSegment(ball.x, ball.y, ep.ax, ep.ay, ep.bx, ep.by);
+
+    let dx = ball.x - cp.x;
+    let dy = ball.y - cp.y;
+    let dist = Math.hypot(dx, dy);
+
+    const effectiveR = ball.r + (p.thick / 2);
+
+    if (dist >= effectiveR || dist === 0) {
+      if (dist === 0) { dx = 0; dy = -1; dist = 1; }
+      else return false;
+    }
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    // empurra para fora
+    const overlap = effectiveR - dist;
+    ball.x += nx * overlap;
+    ball.y += ny * overlap;
+
+    // velocidade da pá no ponto
+    const vs = paddleSurfaceVelocity(p, cp.x, cp.y);
+
+    // velocidade relativa bola vs superfície
+    const rvx = ball.vx - vs.vx;
+    const rvy = ball.vy - vs.vy;
+
+    const vn = rvx * nx + rvy * ny;
+
+    if (vn < 0) {
+      // impulso normal simples (massa bola=1)
+      const j = -(1 + PADDLE_REST) * vn;
+
+      // aplica à bola
+      ball.vx += j * nx;
+      ball.vy += j * ny;
+
+      // torque na pá pelo impulso
+      const rx = cp.x - p.x;
+      const ry = cp.y - p.y;
+      const torque = rx * (j * ny) - ry * (j * nx); // r x F
+      p.omega += torque / p.inertia;
+
+      // um pouco de aleatoriedade e controle
+      ball.vx += rand(-RANDOM_KICK, RANDOM_KICK) * 0.06;
+      p.omega = clamp(p.omega, -PADDLE_MAX_OMEGA, PADDLE_MAX_OMEGA);
+    }
+
+    return true;
+  }
+
+  function updatePaddles(dt) {
+    for (const p of paddles) {
+      p.angle += p.omega * dt;
+
+      // amortecimento angular
+      const damp = Math.max(0, 1 - PADDLE_DAMP * dt);
+      p.omega *= damp;
+
+      // evita ângulos enormes (opcional)
+      if (p.angle > Math.PI) p.angle -= 2*Math.PI;
+      if (p.angle < -Math.PI) p.angle += 2*Math.PI;
+    }
+  }
+
+  // ======== BOLAS ========
   function createBalls(n) {
     balls = [];
     finishOrder = [];
@@ -333,11 +496,11 @@ Diego"></textarea>
 
     const names = parseNames();
     const topY = 50;
-    const gap = (SIM_W - 2 * WALL_PADDING) / (n + 1);
+    const gap = (SIM_W - 2 * (WALL_PAD + 10)) / (n + 1);
 
     for (let i = 0; i < n; i++) {
       const id = i + 1;
-      const x = WALL_PADDING + (i + 1) * gap;
+      const x = (WALL_PAD + 10) + (i + 1) * gap;
       const name = (names[i] || `Jogador ${id}`).trim() || `Jogador ${id}`;
 
       balls.push({
@@ -349,7 +512,6 @@ Diego"></textarea>
         r: BALL_RADIUS,
         color: distinctColor(i, n),
         finished: false,
-        eliminated: false,
         finishT: null,
 
         lastX: x,
@@ -363,9 +525,6 @@ Diego"></textarea>
     playersInput.disabled = !enabled;
     heightInput.disabled = !enabled;
     namesListEl.disabled = !enabled;
-
-    // slider também
-    bombRateEl.disabled = !enabled;
   }
 
   function resetAll() {
@@ -383,12 +542,8 @@ Diego"></textarea>
     WORLD_H = clamp(parseInt(heightInput.value || "3600", 10), 1200, 8000);
     heightInput.value = WORLD_H;
 
-    // aplica slider -> bombRate
-    const br = clamp(parseInt(bombRateEl.value || "10", 10), 0, 20);
-    bombRateEl.value = br;
-    bombRateLabel.textContent = `${br}%`;
-    bombRate = br / 100;
-
+    rebuildRamps();
+    buildPaddles();
     buildBoard();
     createBalls(n);
 
@@ -410,12 +565,8 @@ Diego"></textarea>
     WORLD_H = clamp(parseInt(heightInput.value || "3600", 10), 1200, 8000);
     heightInput.value = WORLD_H;
 
-    // fixa bombRate a partir do slider no momento do start
-    const br = clamp(parseInt(bombRateEl.value || "10", 10), 0, 20);
-    bombRateEl.value = br;
-    bombRateLabel.textContent = `${br}%`;
-    bombRate = br / 100;
-
+    rebuildRamps();
+    buildPaddles();
     buildBoard();
     createBalls(n);
 
@@ -444,40 +595,31 @@ Diego"></textarea>
     }
   }
 
-  // ======== PAREDES (robusto) ========
-  function enforceWalls(b) {
-    const left = WALL_PADDING + b.r;
-    const right = SIM_W - WALL_PADDING - b.r;
-
-    if (b.x < left)  { b.x = left;  b.vx = Math.abs(b.vx) * BOUNCE; }
-    if (b.x > right) { b.x = right; b.vx = -Math.abs(b.vx) * BOUNCE; }
-
-    b.x = clamp(b.x, left, right);
-  }
-
   // ======== COLISÕES ========
-  function collideBallWithPeg(b, o) {
-    const dx = b.x - o.x;
-    const dy = b.y - o.y;
+  function collideBallWithPeg(ball, peg) {
+    const dx = ball.x - peg.x;
+    const dy = ball.y - peg.y;
     const dist = Math.hypot(dx, dy);
-    const minDist = b.r + o.r;
-    if (dist >= minDist || dist === 0) return false;
+    const minDist = ball.r + peg.r;
+    if (dist >= minDist || dist === 0) return;
 
     const nx = dx / dist;
     const ny = dy / dist;
 
+    // separa
     const overlap = (minDist - dist);
-    b.x += nx * overlap;
-    b.y += ny * overlap;
+    ball.x += nx * overlap;
+    ball.y += ny * overlap;
 
-    const vn = b.vx * nx + b.vy * ny;
+    // reflete
+    const vn = ball.vx * nx + ball.vy * ny;
     if (vn < 0) {
-      b.vx -= (1 + BOUNCE) * vn * nx;
-      b.vy -= (1 + BOUNCE) * vn * ny;
+      ball.vx -= (1 + BOUNCE) * vn * nx;
+      ball.vy -= (1 + BOUNCE) * vn * ny;
     }
 
-    b.vx += rand(-RANDOM_KICK, RANDOM_KICK) * 0.12;
-    return true;
+    // aleatoriedade
+    ball.vx += rand(-RANDOM_KICK, RANDOM_KICK) * 0.10;
   }
 
   function collideBalls(a, b) {
@@ -501,90 +643,74 @@ Diego"></textarea>
     const vn = dvx * nx + dvy * ny;
     if (vn > 0) return;
 
-    const impulse = -(1 + 0.65) * vn / 2;
+    const impulse = -(1 + 0.62) * vn / 2;
     a.vx -= impulse * nx;
     a.vy -= impulse * ny;
     b.vx += impulse * nx;
     b.vy += impulse * ny;
   }
 
-  function disqualify(b, reason) {
-    if (b.finished || b.eliminated) return;
-
-    b.eliminated = true;
-    b.finished = true;
-    b.finishT = (now() - startTime) / 1000;
-
-    b.x = -9999; b.y = -9999;
-    b.vx = 0; b.vy = 0;
-
-    finishOrder.push({ id: b.id, name: b.name, t: b.finishT, status: 'desclassificado', reason });
-    updateRanking();
-  }
-
   // ======== SIMULAÇÃO ========
   function physicsStep(dt) {
+    updatePaddles(dt);
+
     const finishLineY = WORLD_H - FINISH_BAND;
     const bottom = WORLD_H - 6;
 
     for (const b of balls) {
       if (b.finished) continue;
 
+      // forças
       b.vy += GRAVITY * dt;
-      b.vx += (rand(-SIDE_NOISE, SIDE_NOISE)) * dt;
+      b.vx += rand(-SIDE_NOISE, SIDE_NOISE) * dt;
 
+      // integra
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
+      // arrasto
       const drag = Math.pow(AIR_DRAG, dt * 60);
       b.vx *= drag;
       b.vy *= drag;
 
+      // limita velocidades
       b.vx = clamp(b.vx, -MAX_VX, MAX_VX);
       b.vy = clamp(b.vy, -MAX_VY, MAX_VY);
 
+      // teto
       const top = 12 + b.r;
       if (b.y < top) { b.y = top; b.vy = Math.abs(b.vy) * BOUNCE; }
 
-      // paredes antes
-      enforceWalls(b);
+      // rampas antes das colisões
+      resolveSideRamps(b);
 
-      // obstáculos
-      for (const o of obstacles) {
-        if (b.finished) break;
-
-        if (o.type === 'bomb') {
-          const dx = b.x - o.x;
-          const dy = b.y - o.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist < (b.r + o.r)) {
-            disqualify(b, 'bomba');
-            break;
-          }
-        } else {
-          collideBallWithPeg(b, o);
-        }
+      // colisão com pás (início)
+      // (só vale bem no topo; mesmo assim pode bater em qualquer altura)
+      for (const p of paddles) {
+        collideBallWithPaddle(b, p, dt);
       }
 
-      if (b.finished) continue;
+      // pinos
+      for (const peg of pegs) collideBallWithPeg(b, peg);
 
-      // paredes depois (corrige empurrões laterais)
-      enforceWalls(b);
+      // rampas depois das colisões (corrige empurrões laterais)
+      resolveSideRamps(b);
 
       // chegada
       if (b.y >= finishLineY - b.r - 2) {
         b.finished = true;
-        b.finishT = (performance.now() - startTime) / 1000;
+        b.finishT = (now() - startTime) / 1000;
 
-        b.x = clamp(b.x, WALL_PADDING + b.r, SIM_W - WALL_PADDING - b.r);
+        // fixa em zona de chegada
         b.y = finishLineY + FINISH_BAND * 0.5;
         b.vx = 0; b.vy = 0;
 
-        finishOrder.push({ id: b.id, name: b.name, t: b.finishT, status: 'chegou' });
+        finishOrder.push({ id: b.id, name: b.name, t: b.finishT });
         updateRanking();
         continue;
       }
 
+      // chão final
       if (b.y > bottom - b.r) {
         b.y = bottom - b.r;
         b.vy = -Math.abs(b.vy) * 0.35;
@@ -603,7 +729,7 @@ Diego"></textarea>
           b.vx = clamp(b.vx, -MAX_VX, MAX_VX);
           b.vy = clamp(b.vy, -MAX_VY, MAX_VY);
           b.stuck = 0;
-          enforceWalls(b);
+          resolveSideRamps(b);
         }
       } else {
         b.stuck = 0;
@@ -613,21 +739,24 @@ Diego"></textarea>
       b.lastY = b.y;
     }
 
+    // bola-bola
     for (let i = 0; i < balls.length; i++){
       for (let j = i + 1; j < balls.length; j++){
         if (balls[i].finished || balls[j].finished) continue;
         collideBalls(balls[i], balls[j]);
-        enforceWalls(balls[i]);
-        enforceWalls(balls[j]);
+        resolveSideRamps(balls[i]);
+        resolveSideRamps(balls[j]);
       }
     }
 
+    // câmera acompanha mais adiantadas
     const active = balls.filter(b => !b.finished);
     const yFocus = active.length ? Math.max(...active.map(b => b.y)) : (WORLD_H - FINISH_BAND);
     const desired = clamp(yFocus - VIEW_H_WORLD * 0.35, 0, Math.max(0, WORLD_H - VIEW_H_WORLD));
     cameraTargetY = desired;
     cameraY += (cameraTargetY - cameraY) * 0.12;
 
+    // terminou
     if (finishOrder.length === balls.length) {
       running = false;
       pauseBtn.disabled = true;
@@ -637,7 +766,49 @@ Diego"></textarea>
   }
 
   // ======== RENDER ========
-  function drawBoardWorld() {
+  function drawRampsWorld() {
+    const midY = WORLD_H * 0.5;
+
+    // esquerda (triângulo)
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.beginPath();
+    ctx.moveTo(WALL_PAD, 0);
+    ctx.lineTo(WALL_PAD + rampInset, midY);
+    ctx.lineTo(WALL_PAD, WORLD_H);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(leftSeg1.ax, leftSeg1.ay);
+    ctx.lineTo(leftSeg1.bx, leftSeg1.by);
+    ctx.lineTo(leftSeg2.bx, leftSeg2.by);
+    ctx.stroke();
+    ctx.restore();
+
+    // direita (triângulo)
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.beginPath();
+    ctx.moveTo(SIM_W - WALL_PAD, 0);
+    ctx.lineTo(SIM_W - WALL_PAD - rampInset, midY);
+    ctx.lineTo(SIM_W - WALL_PAD, WORLD_H);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(rightSeg1.ax, rightSeg1.ay);
+    ctx.lineTo(rightSeg1.bx, rightSeg1.by);
+    ctx.lineTo(rightSeg2.bx, rightSeg2.by);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFinishWorld() {
     const finishY = WORLD_H - FINISH_BAND;
 
     ctx.save();
@@ -648,64 +819,67 @@ Diego"></textarea>
     ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
     ctx.fillText("LINHA DE CHEGADA", 14, finishY + 20);
     ctx.restore();
+  }
 
-    for (const o of obstacles) {
-      if (o.type === 'peg') {
-        ctx.save();
-        ctx.fillStyle = "rgba(255,255,255,0.55)";
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      } else {
-        ctx.save();
-        ctx.fillStyle = "rgba(255,255,255,0.12)";
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, o.r + 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "rgba(255,255,255,0.95)";
-        ctx.fillText("💣", o.x, o.y + 0.5);
-        ctx.restore();
-      }
-    }
-
+  function drawPegsWorld() {
     ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(WALL_PADDING, 0);
-    ctx.lineTo(WALL_PADDING, WORLD_H);
-    ctx.moveTo(SIM_W - WALL_PADDING, 0);
-    ctx.lineTo(SIM_W - WALL_PADDING, WORLD_H);
-    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    for (const p of pegs) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
+  }
+
+  function drawPaddlesWorld() {
+    for (const p of paddles) {
+      const ep = paddleEndpoints(p);
+
+      ctx.save();
+      // sombra/área
+      ctx.strokeStyle = "rgba(255,255,255,0.28)";
+      ctx.lineWidth = p.thick;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(ep.ax, ep.ay);
+      ctx.lineTo(ep.bx, ep.by);
+      ctx.stroke();
+
+      // pivô
+      ctx.fillStyle = "rgba(255,255,255,0.65)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.restore();
+    }
   }
 
   function drawBallsWorld() {
     for (const b of balls) {
-      if (b.eliminated) continue;
-
       ctx.save();
+
+      // bola
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       ctx.fillStyle = b.color;
       ctx.fill();
 
+      // brilho
       ctx.beginPath();
       ctx.arc(b.x - b.r*0.25, b.y - b.r*0.25, b.r*0.35, 0, Math.PI*2);
       ctx.fillStyle = "rgba(255,255,255,0.22)";
       ctx.fill();
 
+      // número
       ctx.fillStyle = "rgba(0,0,0,0.75)";
       ctx.font = "800 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(b.id), b.x, b.y);
 
+      // nome
       const name = b.name || `Jogador ${b.id}`;
       ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
       ctx.textAlign = "center";
@@ -717,6 +891,7 @@ Diego"></textarea>
 
       ctx.fillStyle = "rgba(255,255,255,0.95)";
       ctx.fillText(name, b.x, b.y - b.r - 10);
+
       ctx.restore();
     }
   }
@@ -729,22 +904,31 @@ Diego"></textarea>
 
     const maxCam = Math.max(0, WORLD_H - VIEW_H_WORLD);
     const pct = maxCam === 0 ? 100 : (cameraY / maxCam * 100);
+
     ctx.fillText(`Status: ${status}`, 14, 18);
-    ctx.fillText(`Bombas: ${(bombRate*100).toFixed(0)}% | Queda: ${WORLD_H}px | Câmera: ${pct.toFixed(0)}%`, 14, 36);
+    ctx.fillText(`Rampas: "<" e ">" | Queda: ${WORLD_H}px | Câmera: ${pct.toFixed(0)}%`, 14, 36);
     ctx.restore();
   }
 
   function draw() {
+    // limpa
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // mundo escalado
     ctx.setTransform(DPR * SCALE, 0, 0, DPR * SCALE, 0, 0);
     ctx.save();
     ctx.translate(0, -cameraY);
-    drawBoardWorld();
+
+    drawFinishWorld();
+    drawRampsWorld();
+    drawPaddlesWorld();
+    drawPegsWorld();
     drawBallsWorld();
+
     ctx.restore();
 
+    // HUD em pixels
     ctx.setTransform(DPR,0,0,DPR,0,0);
     drawHUD();
   }
@@ -752,12 +936,9 @@ Diego"></textarea>
   function updateRanking() {
     const sorted = [...finishOrder].sort((a,b) => a.t - b.t);
     rankingEl.innerHTML = "";
-
     for (const item of sorted) {
       const li = document.createElement("li");
-      li.textContent = (item.status === 'desclassificado')
-        ? `${item.name} — DESCLASSIFICADO`
-        : item.name;
+      li.textContent = item.name;
 
       const badge = document.createElement("span");
       badge.className = "badge";
@@ -790,16 +971,6 @@ Diego"></textarea>
     animationId = requestAnimationFrame(loop);
   }
 
-  // ======== SLIDER: atualiza label em tempo real ========
-  function syncBombUI() {
-    const br = clamp(parseInt(bombRateEl.value || "10", 10), 0, 20);
-    bombRateEl.value = br;
-    bombRateLabel.textContent = `${br}%`;
-    // bombRate só é aplicado no Reset/Iniciar (para manter tabuleiro consistente)
-  }
-  bombRateEl.addEventListener("input", syncBombUI);
-  bombRateEl.addEventListener("change", syncBombUI);
-
   // ======== EVENTOS ========
   startBtn.addEventListener("click", start);
   resetBtn.addEventListener("click", resetAll);
@@ -822,7 +993,6 @@ Diego"></textarea>
 
   // ======== INIT ========
   function init() {
-    syncBombUI();
     fitPanelHeight();
     setCanvasSizeOnly();
     resetAll();
@@ -832,3 +1002,6 @@ Diego"></textarea>
 </script>
 </body>
 </html>
+
+
+
