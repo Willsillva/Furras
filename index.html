@@ -2,7 +2,6 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <!-- Mantém o layout estável no mobile (sem zoom alterar o mundo/obstáculos) -->
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Plinko Furras</title>
   <style>
@@ -79,7 +78,7 @@
 <body>
   <header>
     <div class="group">
-      <strong>🦝 Plinko Furras </strong>
+      <strong>🦝 Plinko Furras</strong>
       <span class="hint">Cole nomes e inicie.</span>
     </div>
 
@@ -113,8 +112,8 @@ Bruno
 Carla
 Diego"></textarea>
         <div class="small" style="margin-top:10px;">
-          O jogo usa os <strong>primeiros N nomes</strong>, onde <strong>N</strong> é o número de jogadores.
-          Se faltar nome, completa com “Jogador X”. Se sobrar, ignora o excedente.
+          O jogo usa automaticamente a <strong>quantidade de linhas</strong> como número de jogadores (mín. 2, máx. 20).
+          Se faltar nome (ex.: só 1), completa com “Jogador X”. Se sobrar (mais de 20), usa apenas os 20 primeiros.
         </div>
       </div>
 
@@ -129,8 +128,7 @@ Diego"></textarea>
       <div class="card">
         <h3>Notas</h3>
         <div class="small">
-          As laterais agora são rampas triangulares (como &lt; e &gt;), com colisão por segmento, para impedir fuga pelas bordas.
-          As pás no início giram por impacto das bolas (sem motor).
+          Laterais com rampas triangulares (&lt; e &gt;), colisão por segmento. Pás no início giram por impacto das bolas (sem motor).
         </div>
       </div>
     </div>
@@ -177,11 +175,10 @@ Diego"></textarea>
   const MAX_VY = 4200;
 
   // ======== PÁS GIRATÓRIAS ========
-  // Pás como barras giratórias com pivô e dinâmica simples (rodam por impacto).
   const PADDLE_LEN = 150;
   const PADDLE_THICK = 14;      // espessura visual e colisão (capsule)
   const PADDLE_REST = 0.65;
-  const PADDLE_DAMP = 1.2;      // amortecimento angular (quanto maior, mais para rápido)
+  const PADDLE_DAMP = 1.2;      // amortecimento angular
   const PADDLE_MAX_OMEGA = 16;  // limite de velocidade angular
 
   // ======== DOM ========
@@ -243,6 +240,25 @@ Diego"></textarea>
       .filter(s => s.length > 0);
   }
 
+  // ======== AUTO: jogadores = quantidade de nomes (2..20) ========
+  function desiredPlayersFromNames() {
+    const names = parseNames();
+    if (names.length === 0) return null;       // sem lista -> usa input
+    return clamp(names.length, 2, 20);
+  }
+
+  function syncPlayersInputFromNames() {
+    const n = desiredPlayersFromNames();
+    if (n === null) return;
+    playersInput.value = n;
+
+    const namesCount = parseNames().length;
+    if (namesCount > 20) {
+      // não exibe UI extra; só log (opcional)
+      console.warn(`Foram colados ${namesCount} nomes. O máximo é 20; usando 20.`);
+    }
+  }
+
   // ======== CANVAS/ESCALA ========
   function fitPanelHeight(){
     const wrap = document.getElementById("canvasWrap");
@@ -292,7 +308,6 @@ Diego"></textarea>
     const r = ball.r;
     if (dist >= r || dist === 0) {
       if (dist === 0) {
-        // normal arbitrária (evita NaN)
         dx = 0; dy = -1; dist = 1;
       } else {
         return false;
@@ -302,12 +317,10 @@ Diego"></textarea>
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // empurra para fora
     const overlap = r - dist;
     ball.x += nx * overlap;
     ball.y += ny * overlap;
 
-    // reflete velocidade na normal
     const vn = ball.vx * nx + ball.vy * ny;
     if (vn < 0) {
       ball.vx -= (1 + restitution) * vn * nx;
@@ -323,23 +336,20 @@ Diego"></textarea>
 
     const midY = WORLD_H * 0.5;
 
-    // esquerda: (PAD,0) -> (PAD+inset,mid) -> (PAD, WORLD_H)
     leftSeg1  = { ax: WALL_PAD, ay: 0,        bx: WALL_PAD + rampInset, by: midY };
     leftSeg2  = { ax: WALL_PAD + rampInset, ay: midY, bx: WALL_PAD,     by: WORLD_H };
 
-    // direita: (W-PAD,0) -> (W-PAD-inset,mid) -> (W-PAD,WORLD_H)
     rightSeg1 = { ax: SIM_W - WALL_PAD, ay: 0,        bx: SIM_W - WALL_PAD - rampInset, by: midY };
     rightSeg2 = { ax: SIM_W - WALL_PAD - rampInset, ay: midY, bx: SIM_W - WALL_PAD,     by: WORLD_H };
   }
 
   function resolveSideRamps(ball) {
-    // colisão com os 4 segmentos
     resolveCircleSegment(ball, leftSeg1.ax, leftSeg1.ay, leftSeg1.bx, leftSeg1.by, BOUNCE, 0);
     resolveCircleSegment(ball, leftSeg2.ax, leftSeg2.ay, leftSeg2.bx, leftSeg2.by, BOUNCE, 0);
     resolveCircleSegment(ball, rightSeg1.ax, rightSeg1.ay, rightSeg1.bx, rightSeg1.by, BOUNCE, 0);
     resolveCircleSegment(ball, rightSeg2.ax, rightSeg2.ay, rightSeg2.bx, rightSeg2.by, BOUNCE, 0);
 
-    // fail-safe: nunca permite “sair do mundo” mesmo com números extremos
+    // fail-safe
     ball.x = clamp(ball.x, -50, SIM_W + 50);
   }
 
@@ -351,7 +361,6 @@ Diego"></textarea>
     const bottomMargin = FINISH_BAND + 120;
     const usableH = WORLD_H - topMargin - bottomMargin;
 
-    // Mantém espaçamento confortável para evitar travar
     const cols = 12;
     const colGap = (SIM_W - 2 * (WALL_PAD + 6)) / cols;
 
@@ -366,7 +375,6 @@ Diego"></textarea>
       for (let c = 0; c <= cols; c++) {
         const x = (WALL_PAD + 6) + c * colGap + offset;
 
-        // evita pinos muito perto das rampas (reduz chance de “encaixe”)
         const leftLimit  = WALL_PAD + 14;
         const rightLimit = SIM_W - WALL_PAD - 14;
         if (x < leftLimit || x > rightLimit) continue;
@@ -378,46 +386,33 @@ Diego"></textarea>
 
   // ======== PÁS ========
   function buildPaddles() {
-    // Pás próximas ao começo (topo)
     const baseY = 150;
     paddles = [
-      makePaddle(SIM_W * 0.28, baseY,           0.15),
-      makePaddle(SIM_W * 0.50, baseY + 40,     -0.10),
-      makePaddle(SIM_W * 0.72, baseY,           0.10),
+      makePaddle(SIM_W * 0.28, baseY,       0.15),
+      makePaddle(SIM_W * 0.50, baseY + 40, -0.10),
+      makePaddle(SIM_W * 0.72, baseY,       0.10),
     ];
   }
 
   function makePaddle(x, y, angle) {
     const L = PADDLE_LEN;
-    const I = (L*L) / 12; // inércia aproximada (massa=1) para barra com pivô no centro
-    return {
-      x, y,
-      len: L,
-      thick: PADDLE_THICK,
-      angle,
-      omega: 0,
-      inertia: I
-    };
+    const I = (L*L) / 12;
+    return { x, y, len: L, thick: PADDLE_THICK, angle, omega: 0, inertia: I };
   }
 
   function paddleEndpoints(p) {
     const hx = Math.cos(p.angle) * (p.len / 2);
     const hy = Math.sin(p.angle) * (p.len / 2);
-    return {
-      ax: p.x - hx, ay: p.y - hy,
-      bx: p.x + hx, by: p.y + hy
-    };
+    return { ax: p.x - hx, ay: p.y - hy, bx: p.x + hx, by: p.y + hy };
   }
 
   function paddleSurfaceVelocity(p, cx, cy) {
-    // velocidade tangencial no ponto de contato por rotação em torno do pivô:
-    // v = omega x r  => ( -omega*ry, omega*rx )
     const rx = cx - p.x;
     const ry = cy - p.y;
     return { vx: -p.omega * ry, vy: p.omega * rx };
   }
 
-  function collideBallWithPaddle(ball, p, dt) {
+  function collideBallWithPaddle(ball, p) {
     const ep = paddleEndpoints(p);
     const cp = closestPointOnSegment(ball.x, ball.y, ep.ax, ep.ay, ep.bx, ep.by);
 
@@ -435,51 +430,39 @@ Diego"></textarea>
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // empurra para fora
     const overlap = effectiveR - dist;
     ball.x += nx * overlap;
     ball.y += ny * overlap;
 
-    // velocidade da pá no ponto
     const vs = paddleSurfaceVelocity(p, cp.x, cp.y);
 
-    // velocidade relativa bola vs superfície
     const rvx = ball.vx - vs.vx;
     const rvy = ball.vy - vs.vy;
-
     const vn = rvx * nx + rvy * ny;
 
     if (vn < 0) {
-      // impulso normal simples (massa bola=1)
       const j = -(1 + PADDLE_REST) * vn;
 
-      // aplica à bola
       ball.vx += j * nx;
       ball.vy += j * ny;
 
-      // torque na pá pelo impulso
       const rx = cp.x - p.x;
       const ry = cp.y - p.y;
-      const torque = rx * (j * ny) - ry * (j * nx); // r x F
+      const torque = rx * (j * ny) - ry * (j * nx);
       p.omega += torque / p.inertia;
 
-      // um pouco de aleatoriedade e controle
       ball.vx += rand(-RANDOM_KICK, RANDOM_KICK) * 0.06;
       p.omega = clamp(p.omega, -PADDLE_MAX_OMEGA, PADDLE_MAX_OMEGA);
     }
-
     return true;
   }
 
   function updatePaddles(dt) {
     for (const p of paddles) {
       p.angle += p.omega * dt;
-
-      // amortecimento angular
       const damp = Math.max(0, 1 - PADDLE_DAMP * dt);
       p.omega *= damp;
 
-      // evita ângulos enormes (opcional)
       if (p.angle > Math.PI) p.angle -= 2*Math.PI;
       if (p.angle < -Math.PI) p.angle += 2*Math.PI;
     }
@@ -494,7 +477,7 @@ Diego"></textarea>
     cameraY = 0;
     cameraTargetY = 0;
 
-    const names = parseNames();
+    const names = parseNames(); // pode ter mais que n; usa os primeiros n
     const topY = 50;
     const gap = (SIM_W - 2 * (WALL_PAD + 10)) / (n + 1);
 
@@ -536,7 +519,9 @@ Diego"></textarea>
 
     accumulator = 0;
 
-    const n = clamp(parseInt(playersInput.value || "8", 10), 2, 20);
+    // se existir lista, ela manda; senão, usa input
+    const nFromNames = desiredPlayersFromNames();
+    const n = (nFromNames ?? clamp(parseInt(playersInput.value || "8", 10), 2, 20));
     playersInput.value = n;
 
     WORLD_H = clamp(parseInt(heightInput.value || "3600", 10), 1200, 8000);
@@ -559,7 +544,9 @@ Diego"></textarea>
   }
 
   function start() {
-    const n = clamp(parseInt(playersInput.value || "8", 10), 2, 20);
+    // se existir lista, ela manda; senão, usa input
+    const nFromNames = desiredPlayersFromNames();
+    const n = (nFromNames ?? clamp(parseInt(playersInput.value || "8", 10), 2, 20));
     playersInput.value = n;
 
     WORLD_H = clamp(parseInt(heightInput.value || "3600", 10), 1200, 8000);
@@ -606,19 +593,16 @@ Diego"></textarea>
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // separa
     const overlap = (minDist - dist);
     ball.x += nx * overlap;
     ball.y += ny * overlap;
 
-    // reflete
     const vn = ball.vx * nx + ball.vy * ny;
     if (vn < 0) {
       ball.vx -= (1 + BOUNCE) * vn * nx;
       ball.vy -= (1 + BOUNCE) * vn * ny;
     }
 
-    // aleatoriedade
     ball.vx += rand(-RANDOM_KICK, RANDOM_KICK) * 0.10;
   }
 
@@ -660,48 +644,34 @@ Diego"></textarea>
     for (const b of balls) {
       if (b.finished) continue;
 
-      // forças
       b.vy += GRAVITY * dt;
       b.vx += rand(-SIDE_NOISE, SIDE_NOISE) * dt;
 
-      // integra
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
-      // arrasto
       const drag = Math.pow(AIR_DRAG, dt * 60);
       b.vx *= drag;
       b.vy *= drag;
 
-      // limita velocidades
       b.vx = clamp(b.vx, -MAX_VX, MAX_VX);
       b.vy = clamp(b.vy, -MAX_VY, MAX_VY);
 
-      // teto
       const top = 12 + b.r;
       if (b.y < top) { b.y = top; b.vy = Math.abs(b.vy) * BOUNCE; }
 
-      // rampas antes das colisões
       resolveSideRamps(b);
 
-      // colisão com pás (início)
-      // (só vale bem no topo; mesmo assim pode bater em qualquer altura)
-      for (const p of paddles) {
-        collideBallWithPaddle(b, p, dt);
-      }
+      for (const p of paddles) collideBallWithPaddle(b, p);
 
-      // pinos
       for (const peg of pegs) collideBallWithPeg(b, peg);
 
-      // rampas depois das colisões (corrige empurrões laterais)
       resolveSideRamps(b);
 
-      // chegada
       if (b.y >= finishLineY - b.r - 2) {
         b.finished = true;
         b.finishT = (now() - startTime) / 1000;
 
-        // fixa em zona de chegada
         b.y = finishLineY + FINISH_BAND * 0.5;
         b.vx = 0; b.vy = 0;
 
@@ -710,14 +680,12 @@ Diego"></textarea>
         continue;
       }
 
-      // chão final
       if (b.y > bottom - b.r) {
         b.y = bottom - b.r;
         b.vy = -Math.abs(b.vy) * 0.35;
         b.vx *= 0.92;
       }
 
-      // anti-stuck
       const speed = Math.hypot(b.vx, b.vy);
       const moved = Math.hypot(b.x - b.lastX, b.y - b.lastY);
 
@@ -726,7 +694,7 @@ Diego"></textarea>
         if (b.stuck > UNSTUCK_TIME) {
           b.vx += rand(-UNSTUCK_PUSH_X, UNSTUCK_PUSH_X);
           b.vy -= rand(0, UNSTUCK_PUSH_UP);
-          b.vx = clamp(b.vx, -MAX_VX, MAX_VX);
+          b.vx = clamp(bi.vx, -MAX_VX, MAX_VX);
           b.vy = clamp(b.vy, -MAX_VY, MAX_VY);
           b.stuck = 0;
           resolveSideRamps(b);
@@ -739,7 +707,6 @@ Diego"></textarea>
       b.lastY = b.y;
     }
 
-    // bola-bola
     for (let i = 0; i < balls.length; i++){
       for (let j = i + 1; j < balls.length; j++){
         if (balls[i].finished || balls[j].finished) continue;
@@ -749,14 +716,12 @@ Diego"></textarea>
       }
     }
 
-    // câmera acompanha mais adiantadas
     const active = balls.filter(b => !b.finished);
     const yFocus = active.length ? Math.max(...active.map(b => b.y)) : (WORLD_H - FINISH_BAND);
     const desired = clamp(yFocus - VIEW_H_WORLD * 0.35, 0, Math.max(0, WORLD_H - VIEW_H_WORLD));
     cameraTargetY = desired;
     cameraY += (cameraTargetY - cameraY) * 0.12;
 
-    // terminou
     if (finishOrder.length === balls.length) {
       running = false;
       pauseBtn.disabled = true;
@@ -769,7 +734,6 @@ Diego"></textarea>
   function drawRampsWorld() {
     const midY = WORLD_H * 0.5;
 
-    // esquerda (triângulo)
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.06)";
     ctx.beginPath();
@@ -788,7 +752,6 @@ Diego"></textarea>
     ctx.stroke();
     ctx.restore();
 
-    // direita (triângulo)
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.06)";
     ctx.beginPath();
@@ -837,7 +800,6 @@ Diego"></textarea>
       const ep = paddleEndpoints(p);
 
       ctx.save();
-      // sombra/área
       ctx.strokeStyle = "rgba(255,255,255,0.28)";
       ctx.lineWidth = p.thick;
       ctx.lineCap = "round";
@@ -846,12 +808,10 @@ Diego"></textarea>
       ctx.lineTo(ep.bx, ep.by);
       ctx.stroke();
 
-      // pivô
       ctx.fillStyle = "rgba(255,255,255,0.65)";
       ctx.beginPath();
       ctx.arc(p.x, p.y, 6, 0, Math.PI*2);
       ctx.fill();
-
       ctx.restore();
     }
   }
@@ -860,26 +820,22 @@ Diego"></textarea>
     for (const b of balls) {
       ctx.save();
 
-      // bola
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       ctx.fillStyle = b.color;
       ctx.fill();
 
-      // brilho
       ctx.beginPath();
       ctx.arc(b.x - b.r*0.25, b.y - b.r*0.25, b.r*0.35, 0, Math.PI*2);
       ctx.fillStyle = "rgba(255,255,255,0.22)";
       ctx.fill();
 
-      // número
       ctx.fillStyle = "rgba(0,0,0,0.75)";
       ctx.font = "800 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(b.id), b.x, b.y);
 
-      // nome
       const name = b.name || `Jogador ${b.id}`;
       ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
       ctx.textAlign = "center";
@@ -906,16 +862,14 @@ Diego"></textarea>
     const pct = maxCam === 0 ? 100 : (cameraY / maxCam * 100);
 
     ctx.fillText(`Status: ${status}`, 14, 18);
-    ctx.fillText(`Rampas: "<" e ">" | Queda: ${WORLD_H}px | Câmera: ${pct.toFixed(0)}%`, 14, 36);
+    ctx.fillText(`Jogadores: ${balls.length} | Queda: ${WORLD_H}px | Câmera: ${pct.toFixed(0)}%`, 14, 36);
     ctx.restore();
   }
 
   function draw() {
-    // limpa
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // mundo escalado
     ctx.setTransform(DPR * SCALE, 0, 0, DPR * SCALE, 0, 0);
     ctx.save();
     ctx.translate(0, -cameraY);
@@ -928,7 +882,6 @@ Diego"></textarea>
 
     ctx.restore();
 
-    // HUD em pixels
     ctx.setTransform(DPR,0,0,DPR,0,0);
     drawHUD();
   }
@@ -986,6 +939,14 @@ Diego"></textarea>
     if (!running) resetAll();
   });
 
+  // AUTO atualizar jogadores ao colar/digitar a lista
+  namesListEl.addEventListener("input", () => {
+    if (!running) syncPlayersInputFromNames();
+  });
+  namesListEl.addEventListener("paste", () => {
+    setTimeout(() => { if (!running) syncPlayersInputFromNames(); }, 0);
+  });
+
   window.addEventListener("resize", () => {
     fitPanelHeight();
     setCanvasSizeOnly();
@@ -995,6 +956,7 @@ Diego"></textarea>
   function init() {
     fitPanelHeight();
     setCanvasSizeOnly();
+    syncPlayersInputFromNames();
     resetAll();
   }
   init();
@@ -1002,7 +964,3 @@ Diego"></textarea>
 </script>
 </body>
 </html>
-
-
-
-
