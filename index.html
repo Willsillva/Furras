@@ -176,10 +176,15 @@ Diego"></textarea>
 
   // ======== PÁS GIRATÓRIAS ========
   const PADDLE_LEN = 150;
-  const PADDLE_THICK = 14;      // espessura visual e colisão (capsule)
+  const PADDLE_THICK = 14;
   const PADDLE_REST = 0.65;
-  const PADDLE_DAMP = 1.2;      // amortecimento angular
-  const PADDLE_MAX_OMEGA = 16;  // limite de velocidade angular
+  const PADDLE_DAMP = 1.2;
+  const PADDLE_MAX_OMEGA = 16;
+
+  // ======== OTIMIZAÇÃO (bucket por altura) ========
+  const PEG_BUCKET_H = 120;     // altura de cada “faixa” para buscar pinos próximos
+  let pegBuckets = [];          // array de arrays de pinos
+  let pegBucketCount = 0;
 
   // ======== DOM ========
   const canvas = document.getElementById('c');
@@ -197,8 +202,8 @@ Diego"></textarea>
   // ======== ESTADO ========
   let DPR = 1;
   let CSS_W = 900, CSS_H = 560;
-  let SCALE = 1;           // mundo -> tela
-  let VIEW_H_WORLD = 560;  // altura visível no mundo
+  let SCALE = 1;
+  let VIEW_H_WORLD = 560;
 
   let WORLD_H = 3600;
 
@@ -210,7 +215,7 @@ Diego"></textarea>
   let paused = false;
   let animationId = null;
 
-  let finishOrder = []; // {id,name,t}
+  let finishOrder = [];
 
   let cameraY = 0;
   let cameraTargetY = 0;
@@ -243,7 +248,7 @@ Diego"></textarea>
   // ======== AUTO: jogadores = quantidade de nomes (2..20) ========
   function desiredPlayersFromNames() {
     const names = parseNames();
-    if (names.length === 0) return null;       // sem lista -> usa input
+    if (names.length === 0) return null;
     return clamp(names.length, 2, 20);
   }
 
@@ -251,12 +256,6 @@ Diego"></textarea>
     const n = desiredPlayersFromNames();
     if (n === null) return;
     playersInput.value = n;
-
-    const namesCount = parseNames().length;
-    if (namesCount > 20) {
-      // não exibe UI extra; só log (opcional)
-      console.warn(`Foram colados ${namesCount} nomes. O máximo é 20; usando 20.`);
-    }
   }
 
   // ======== CANVAS/ESCALA ========
@@ -307,11 +306,8 @@ Diego"></textarea>
 
     const r = ball.r;
     if (dist >= r || dist === 0) {
-      if (dist === 0) {
-        dx = 0; dy = -1; dist = 1;
-      } else {
-        return false;
-      }
+      if (dist === 0) { dx = 0; dy = -1; dist = 1; }
+      else return false;
     }
 
     const nx = dx / dist;
@@ -330,10 +326,8 @@ Diego"></textarea>
     return true;
   }
 
-  // Rampas "<" e ">"
   function rebuildRamps() {
     rampInset = clamp(Math.round(SIM_W * 0.16), RAMP_INSET_MIN, RAMP_INSET_MAX);
-
     const midY = WORLD_H * 0.5;
 
     leftSeg1  = { ax: WALL_PAD, ay: 0,        bx: WALL_PAD + rampInset, by: midY };
@@ -349,7 +343,6 @@ Diego"></textarea>
     resolveCircleSegment(ball, rightSeg1.ax, rightSeg1.ay, rightSeg1.bx, rightSeg1.by, BOUNCE, 0);
     resolveCircleSegment(ball, rightSeg2.ax, rightSeg2.ay, rightSeg2.bx, rightSeg2.by, BOUNCE, 0);
 
-    // fail-safe
     ball.x = clamp(ball.x, -50, SIM_W + 50);
   }
 
@@ -381,6 +374,14 @@ Diego"></textarea>
 
         pegs.push({ x, y, r: PEG_RADIUS });
       }
+    }
+
+    // buckets (performance)
+    pegBucketCount = Math.ceil(WORLD_H / PEG_BUCKET_H) + 2;
+    pegBuckets = Array.from({ length: pegBucketCount }, () => []);
+    for (const p of pegs) {
+      const idx = clamp(Math.floor(p.y / PEG_BUCKET_H), 0, pegBucketCount - 1);
+      pegBuckets[idx].push(p);
     }
   }
 
@@ -477,7 +478,7 @@ Diego"></textarea>
     cameraY = 0;
     cameraTargetY = 0;
 
-    const names = parseNames(); // pode ter mais que n; usa os primeiros n
+    const names = parseNames();
     const topY = 50;
     const gap = (SIM_W - 2 * (WALL_PAD + 10)) / (n + 1);
 
@@ -487,8 +488,7 @@ Diego"></textarea>
       const name = (names[i] || `Jogador ${id}`).trim() || `Jogador ${id}`;
 
       balls.push({
-        id,
-        name,
+        id, name,
         x, y: topY,
         vx: rand(-70, 70),
         vy: rand(-20, 20),
@@ -496,7 +496,6 @@ Diego"></textarea>
         color: distinctColor(i, n),
         finished: false,
         finishT: null,
-
         lastX: x,
         lastY: topY,
         stuck: 0
@@ -519,7 +518,6 @@ Diego"></textarea>
 
     accumulator = 0;
 
-    // se existir lista, ela manda; senão, usa input
     const nFromNames = desiredPlayersFromNames();
     const n = (nFromNames ?? clamp(parseInt(playersInput.value || "8", 10), 2, 20));
     playersInput.value = n;
@@ -544,7 +542,6 @@ Diego"></textarea>
   }
 
   function start() {
-    // se existir lista, ela manda; senão, usa input
     const nFromNames = desiredPlayersFromNames();
     const n = (nFromNames ?? clamp(parseInt(playersInput.value || "8", 10), 2, 20));
     playersInput.value = n;
@@ -664,7 +661,15 @@ Diego"></textarea>
 
       for (const p of paddles) collideBallWithPaddle(b, p);
 
-      for (const peg of pegs) collideBallWithPeg(b, peg);
+      // pinos próximos (bucket)
+      const bi = clamp(Math.floor(b.y / PEG_BUCKET_H), 0, pegBucketCount - 1);
+      for (let k = bi - 1; k <= bi + 1; k++) {
+        if (k < 0 || k >= pegBucketCount) continue;
+        const bucket = pegBuckets[k];
+        for (let i = 0; i < bucket.length; i++) {
+          collideBallWithPeg(b, bucket[i]);
+        }
+      }
 
       resolveSideRamps(b);
 
@@ -686,6 +691,7 @@ Diego"></textarea>
         b.vx *= 0.92;
       }
 
+      // anti-stuck (CORRIGIDO: nada de "bi.vx")
       const speed = Math.hypot(b.vx, b.vy);
       const moved = Math.hypot(b.x - b.lastX, b.y - b.lastY);
 
@@ -694,8 +700,11 @@ Diego"></textarea>
         if (b.stuck > UNSTUCK_TIME) {
           b.vx += rand(-UNSTUCK_PUSH_X, UNSTUCK_PUSH_X);
           b.vy -= rand(0, UNSTUCK_PUSH_UP);
-          b.vx = clamp(bi.vx, -MAX_VX, MAX_VX);
+
+          // clamp correto
+          b.vx = clamp(b.vx, -MAX_VX, MAX_VX);
           b.vy = clamp(b.vy, -MAX_VY, MAX_VY);
+
           b.stuck = 0;
           resolveSideRamps(b);
         }
@@ -707,6 +716,7 @@ Diego"></textarea>
       b.lastY = b.y;
     }
 
+    // bola-bola
     for (let i = 0; i < balls.length; i++){
       for (let j = i + 1; j < balls.length; j++){
         if (balls[i].finished || balls[j].finished) continue;
@@ -716,6 +726,7 @@ Diego"></textarea>
       }
     }
 
+    // câmera
     const active = balls.filter(b => !b.finished);
     const yFocus = active.length ? Math.max(...active.map(b => b.y)) : (WORLD_H - FINISH_BAND);
     const desired = clamp(yFocus - VIEW_H_WORLD * 0.35, 0, Math.max(0, WORLD_H - VIEW_H_WORLD));
@@ -734,6 +745,7 @@ Diego"></textarea>
   function drawRampsWorld() {
     const midY = WORLD_H * 0.5;
 
+    // esquerda
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.06)";
     ctx.beginPath();
@@ -752,6 +764,7 @@ Diego"></textarea>
     ctx.stroke();
     ctx.restore();
 
+    // direita
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.06)";
     ctx.beginPath();
@@ -939,7 +952,6 @@ Diego"></textarea>
     if (!running) resetAll();
   });
 
-  // AUTO atualizar jogadores ao colar/digitar a lista
   namesListEl.addEventListener("input", () => {
     if (!running) syncPlayersInputFromNames();
   });
